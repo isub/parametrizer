@@ -2,6 +2,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <stdio.h>
+#include <ctype.h>
 
 #include "parametrizer.h"
 
@@ -9,13 +11,14 @@
 #	define snprintf _snprintf
 #endif
 
-int is_sep(char c, char sep_list[], size_t size)
+int is_sep(char c)
 {
 	int iRetVal = 0;
 	size_t s;
+	static char mcSeparator[] = { ' ', '\t', '\r', '\n', ')', '(', ',' };
 
-	for (s = 0; s < size; ++s) {
-		if (c == sep_list[s]) {
+	for (s = 0; s < sizeof(mcSeparator); ++s) {
+		if (c == mcSeparator[s]) {
 			iRetVal = 1;
 			break;
 		}
@@ -85,19 +88,50 @@ int select_term(char *p_pszText, char **p_ppszTerm, size_t *p_stLen)
 		return iRetVal;
 	pszBegin++;
 	pszBegin++;
+	iRetVal = 1;
 
 	for (*p_ppszTerm = pszBegin; pszBegin[st]; st++) {
 		if (pszBegin[st] == '(') {
 			iCnt++;
 		} else if (pszBegin[st] == ')') {
 			if (!iCnt) {
-				iRetVal = 1;
 				break;
 			}
 			iCnt--;
 		} else if (!iCnt && (pszBegin[st] == ',' || pszBegin[st] == ')')) {
-			iRetVal = 1;
 			break;
+		}
+	}
+
+	*p_stLen = st;
+
+	return iRetVal;
+}
+
+int select_term_apo(char *p_pszText, char **p_ppszTerm, size_t *p_stLen)
+{
+	int iRetVal = 0;
+	char *pszBegin;
+	size_t st = 1;
+	int iItWasApo = 0;
+
+	pszBegin = strstr(p_pszText, "'");
+	if (!pszBegin)
+		return iRetVal;
+	iRetVal = 1;
+
+	for (*p_ppszTerm = pszBegin; pszBegin[st]; st++) {
+		if (iItWasApo) {
+			/* если после кавычки следует кавычка, значит это экранированная кавычка */
+			if (pszBegin[st] == '\'') {
+				iItWasApo = 0;
+			} else {
+				/* иначе это конец строки */
+				break;
+			}
+		} else {
+			if (pszBegin[st] == '\'')
+				iItWasApo = 1;
 		}
 	}
 
@@ -115,7 +149,6 @@ int parse_term(struct SValue **p_ppsoVAlueList, struct SValue **p_ppsoLast, char
 	int iItCouldBeRWord = 0;
 	int iItWasApo = 0;
 	size_t stStrLen;
-	char mcSeparators[] = { ' ', '\t', '\r', '\n', ')', '(', ',' };
 	char *pszValue = NULL;
 	char mcAlt[4096] = { 0 };
 	size_t stReadInd = 0;
@@ -124,13 +157,13 @@ int parse_term(struct SValue **p_ppsoVAlueList, struct SValue **p_ppsoLast, char
 
 	for (st = 0; st < p_stLen; ++st) {
 		if (iItCouldBeRWord) {
-			if (is_sep(p_pszTerm[st], mcSeparators, sizeof(mcSeparators))) {
+			if (is_sep(p_pszTerm[st])) {
 				iItCouldBeRWord = 0;
 			}
 			continue;
 		}
 		if (iItCouldBeNumber) {
-			if (is_sep(p_pszTerm[st], mcSeparators, sizeof(mcSeparators))) {
+			if (is_sep(p_pszTerm[st])) {
 				iItCouldBeNumber = 0;
 				add_value(p_ppsoVAlueList, p_ppsoLast, pszValue, SQLT_INT, stStrLen);
 				iRetVal = 1;
@@ -152,7 +185,7 @@ int parse_term(struct SValue **p_ppsoVAlueList, struct SValue **p_ppsoLast, char
 					iItWasApo = 0;
 					continue;
 				}
-				if (is_sep(p_pszTerm[st], mcSeparators, sizeof(mcSeparators))) {
+				if (is_sep(p_pszTerm[st])) {
 					stStrLen--;
 					iItCouldBeString = 0;
 				}
@@ -174,7 +207,7 @@ int parse_term(struct SValue **p_ppsoVAlueList, struct SValue **p_ppsoLast, char
 				iItWasApo = 1;
 			continue;
 		}
-		if (is_sep(p_pszTerm[st], mcSeparators, sizeof(mcSeparators)))
+		if (is_sep(p_pszTerm[st]))
 			continue;
 		if (p_pszTerm[st] == '\'') {
 			iItCouldBeString = 1;
@@ -281,8 +314,12 @@ void operate_query(char *p_pszQuery, struct SValue **p_ppsoValueList, char **p_p
 	struct SValue *psoLast = NULL;
 	pszTmp = p_pszQuery;
 
-	/* ������������ ��� �������� */
-	while (select_term(pszTmp, &pszTerm, &stLen)) {
+	if (NULL == p_pszQuery)
+		return;
+
+	/* обрабатываем все значения */
+	while (select_term(pszTmp, &pszTerm, &stLen)
+		|| select_term_apo(pszTmp, &pszTerm, &stLen)) {
 		if (parse_term(p_ppsoValueList, &psoLast, pszTerm, stLen, &pszAlt)) {
 			memcpy(&mcPReq[stWriteInd], pszTmp, pszTerm - pszTmp);
 			stWriteInd += pszTerm - pszTmp;
@@ -306,4 +343,57 @@ void operate_query(char *p_pszQuery, struct SValue **p_ppsoValueList, char **p_p
 
 	if (*p_ppsoValueList)
 		*p_pszPQuery = strdup(mcPReq);
+}
+
+int bind_variables(struct SValue *p_psoValueList, OCIStmt *p_psoStmt, OCIError *p_psoError)
+{
+	int iRetVal = OCI_SUCCESS;
+	OCIBind *zatychka = NULL;
+	struct SValue *psoTmp = NULL;
+
+	for (psoTmp = p_psoValueList; psoTmp; psoTmp = psoTmp->m_psoNext) {
+		zatychka = NULL;
+		switch (psoTmp->m_uiType) {
+		case SQLT_STR:
+#ifndef WIN32
+			iRetVal = OCIBindByName(p_psoStmt, &zatychka, p_psoError,
+				psoTmp->m_mcParamName, strlen(psoTmp->m_mcParamName),
+				psoTmp->m_Value.m_pszValue, (sword)strlen(psoTmp->m_Value.m_pszValue) + 1, psoTmp->m_uiType,
+				(dvoid*)0, (ub2*)0, (ub2*)0, (ub4)0, (ub4*)0, OCI_DEFAULT);
+#endif
+			break;
+		case SQLT_INT:
+#ifndef WIN32
+			iRetVal = OCIBindByName(p_psoStmt, &zatychka, p_psoError,
+				psoTmp->m_mcParamName, strlen(psoTmp->m_mcParamName),
+				&psoTmp->m_Value.m_ullVAlue, (sword)sizeof(psoTmp->m_Value.m_ullVAlue), psoTmp->m_uiType,
+				(dvoid*)0, (ub2*)0, (ub2*)0, (ub4)0, (ub4*)0, OCI_DEFAULT);
+#endif
+			break;
+		default:
+			iRetVal = -1;
+			break;
+		}
+		if (iRetVal)
+			break;
+	}
+
+	return iRetVal;
+}
+
+void parametrizer_cleanup(char **p_ppszQuery, struct SValue **p_ppsoValueList)
+{
+	struct SValue *psoTmp = NULL;
+
+	if (*p_ppszQuery) {
+		free(*p_ppszQuery);
+		*p_ppszQuery = NULL;
+	}
+	while (*p_ppsoValueList) {
+		psoTmp = *p_ppsoValueList;
+		*p_ppsoValueList = psoTmp->m_psoNext;
+		if (psoTmp->m_uiType == SQLT_STR)
+			free(psoTmp->m_Value.m_pszValue);
+		free(psoTmp);
+	}
 }
