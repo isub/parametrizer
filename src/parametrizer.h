@@ -1,3 +1,5 @@
+#include <oci.h>
+
 struct SValue {
 	ub4 m_uiType;
 	char m_uiPos;
@@ -7,6 +9,7 @@ struct SValue {
 		char *m_pszValue;
 	} m_Value;
 	struct SValue *m_psoNext;
+	OCIBind *m_hBind;
 };
 
 void operate_query(char *p_pszQuery, struct SValue **p_ppsoVAlueList, char **p_pszPQuery);

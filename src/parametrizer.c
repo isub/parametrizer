@@ -348,15 +348,13 @@ void operate_query(char *p_pszQuery, struct SValue **p_ppsoValueList, char **p_p
 int bind_variables(struct SValue *p_psoValueList, OCIStmt *p_psoStmt, OCIError *p_psoError)
 {
 	int iRetVal = OCI_SUCCESS;
-	OCIBind *zatychka = NULL;
 	struct SValue *psoTmp = NULL;
 
 	for (psoTmp = p_psoValueList; psoTmp; psoTmp = psoTmp->m_psoNext) {
-		zatychka = NULL;
 		switch (psoTmp->m_uiType) {
 		case SQLT_STR:
 #ifndef WIN32
-			iRetVal = OCIBindByName(p_psoStmt, &zatychka, p_psoError,
+			iRetVal = OCIBindByName (p_psoStmt, &psoTmp->m_hBind, p_psoError,
 				psoTmp->m_mcParamName, strlen(psoTmp->m_mcParamName),
 				psoTmp->m_Value.m_pszValue, (sword)strlen(psoTmp->m_Value.m_pszValue) + 1, psoTmp->m_uiType,
 				(dvoid*)0, (ub2*)0, (ub2*)0, (ub4)0, (ub4*)0, OCI_DEFAULT);
@@ -364,7 +362,7 @@ int bind_variables(struct SValue *p_psoValueList, OCIStmt *p_psoStmt, OCIError *
 			break;
 		case SQLT_INT:
 #ifndef WIN32
-			iRetVal = OCIBindByName(p_psoStmt, &zatychka, p_psoError,
+			iRetVal = OCIBindByName (p_psoStmt, &psoTmp->m_hBind, p_psoError,
 				psoTmp->m_mcParamName, strlen(psoTmp->m_mcParamName),
 				&psoTmp->m_Value.m_ullVAlue, (sword)sizeof(psoTmp->m_Value.m_ullVAlue), psoTmp->m_uiType,
 				(dvoid*)0, (ub2*)0, (ub2*)0, (ub4)0, (ub4*)0, OCI_DEFAULT);
@@ -394,6 +392,8 @@ void parametrizer_cleanup(char **p_ppszQuery, struct SValue **p_ppsoValueList)
 		*p_ppsoValueList = psoTmp->m_psoNext;
 		if (psoTmp->m_uiType == SQLT_STR)
 			free(psoTmp->m_Value.m_pszValue);
+		if (psoTmp->m_hBind)
+			OCIHandleFree (psoTmp->m_hBind, OCI_HTYPE_BIND);
 		free(psoTmp);
 	}
 }
