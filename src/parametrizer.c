@@ -259,50 +259,6 @@ int parse_term(struct SValue **p_ppsoVAlueList, struct SValue **p_ppsoLast, char
 	return iRetVal;
 }
 
-void replace_apo(char *p_pszStr, size_t p_stLen)
-{
-	char *pszBegin;
-	char *pszNext;
-	char *pszDApo;
-
-	pszBegin = strstr(p_pszStr, "'");
-	if (!pszBegin)
-		return;
-	pszBegin++;
-
-	char *pszTmp = malloc(p_stLen);
-	pszTmp[0] = '\0';
-
-	pszNext = strstr(pszBegin, "'");
-	if (!pszNext) {
-		free(pszTmp);
-		return;
-	}
-	pszDApo = strstr(pszBegin, "''");
-	if (!pszDApo) {
-		memcpy(pszTmp, pszBegin, pszNext - pszBegin);
-		pszTmp[pszNext - pszBegin] = '\0';
-	} else {
-		while (pszDApo) {
-			pszDApo++;
-			strncat(pszTmp, pszBegin, pszDApo - pszBegin);
-			pszDApo++;
-			pszBegin = pszDApo;
-			pszNext = strstr(pszBegin, "'");
-			pszDApo = strstr(pszBegin, "''");
-		}
-		if (pszNext)
-			strncat(pszTmp, pszBegin, pszNext - pszBegin);
-	}
-
-	if (pszTmp) {
-		strcpy(p_pszStr, pszTmp);
-	}
-
-	if (pszTmp)
-		free(pszTmp);
-}
-
 void operate_query(char *p_pszQuery, struct SValue **p_ppsoValueList, char **p_pszPQuery)
 {
 	char mcPReq[4096] = { 0 };
@@ -312,6 +268,7 @@ void operate_query(char *p_pszQuery, struct SValue **p_ppsoValueList, char **p_p
 	size_t stLen;
 	size_t stWriteInd = 0;
 	struct SValue *psoLast = NULL;
+
 	pszTmp = p_pszQuery;
 
 	if (NULL == p_pszQuery)
@@ -319,14 +276,14 @@ void operate_query(char *p_pszQuery, struct SValue **p_ppsoValueList, char **p_p
 
 	/* обрабатываем все значения */
 	while (select_term(pszTmp, &pszTerm, &stLen)
-		|| select_term_apo(pszTmp, &pszTerm, &stLen)) {
+			|| select_term_apo(pszTmp, &pszTerm, &stLen)) {
+		pszAlt = NULL;
 		if (parse_term(p_ppsoValueList, &psoLast, pszTerm, stLen, &pszAlt)) {
 			memcpy(&mcPReq[stWriteInd], pszTmp, pszTerm - pszTmp);
 			stWriteInd += pszTerm - pszTmp;
 			if (pszAlt) {
 				strcat(&mcPReq[stWriteInd], pszAlt);
 				stWriteInd += strlen(pszAlt);
-				free(pszAlt);
 			}
 		} else {
 			memcpy(&mcPReq[stWriteInd], pszTmp, pszTerm - pszTmp);
@@ -334,8 +291,9 @@ void operate_query(char *p_pszQuery, struct SValue **p_ppsoValueList, char **p_p
 			memcpy(&mcPReq[stWriteInd], pszTerm, stLen);
 			stWriteInd += stLen;
 		}
-
 		pszTmp = pszTerm + stLen;
+		if (pszAlt)
+			free (pszAlt);
 	}
 
 	if (pszTmp)
@@ -392,8 +350,6 @@ void parametrizer_cleanup(char **p_ppszQuery, struct SValue **p_ppsoValueList)
 		*p_ppsoValueList = psoTmp->m_psoNext;
 		if (psoTmp->m_uiType == SQLT_STR)
 			free(psoTmp->m_Value.m_pszValue);
-		if (psoTmp->m_hBind)
-			OCIHandleFree (psoTmp->m_hBind, OCI_HTYPE_BIND);
 		free(psoTmp);
 	}
 }
