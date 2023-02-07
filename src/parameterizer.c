@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <ctype.h>
 
-#include "parametrizer.h"
+#include "parameterizer.h"
 
 #ifdef WIN32
 #	define snprintf _snprintf
@@ -27,7 +27,7 @@ int is_sep(char c)
 	return iRetVal;
 }
 
-int add_value(struct SValue **p_ppsoVAlueList, struct SValue **p_ppsoLast, void *p_pvValue, ub4 p_uiType, size_t p_stLen)
+int add_value(struct SValue **p_ppsoVAlueList, struct SValue **p_ppsoLast, const void *p_pvValue, ub4 p_uiType, size_t p_stLen)
 {
 	int iRetVal = 0;
 	unsigned long long ullValue;
@@ -76,7 +76,7 @@ int add_value(struct SValue **p_ppsoVAlueList, struct SValue **p_ppsoLast, void 
 	return iRetVal;
 }
 
-int select_term(char *p_pszText, char **p_ppszTerm, size_t *p_stLen)
+int select_term(const char *p_pszText, const char **p_ppszTerm, size_t *p_stLen)
 {
 	int iRetVal = 0;
 	char *pszBegin;
@@ -108,7 +108,7 @@ int select_term(char *p_pszText, char **p_ppszTerm, size_t *p_stLen)
 	return iRetVal;
 }
 
-int select_term_apo(char *p_pszText, char **p_ppszTerm, size_t *p_stLen)
+int select_term_apo(const char *p_pszText, const char **p_ppszTerm, size_t *p_stLen)
 {
 	int iRetVal = 0;
 	char *pszBegin;
@@ -140,7 +140,7 @@ int select_term_apo(char *p_pszText, char **p_ppszTerm, size_t *p_stLen)
 	return iRetVal;
 }
 
-int parse_term(struct SValue **p_ppsoVAlueList, struct SValue **p_ppsoLast, char *p_pszTerm, size_t p_stLen, char **p_ppszAlt)
+int parse_term(struct SValue **p_ppsoVAlueList, struct SValue **p_ppsoLast, const char *p_pszTerm, size_t p_stLen, char **p_ppszAlt)
 {
 	int iRetVal = 0;
 	int iFnRes;
@@ -148,8 +148,8 @@ int parse_term(struct SValue **p_ppsoVAlueList, struct SValue **p_ppsoLast, char
 	int iItCouldBeNumber = 0;
 	int iItCouldBeRWord = 0;
 	int iItWasApo = 0;
-	size_t stStrLen;
-	char *pszValue = NULL;
+	size_t stStrLen = 0;
+	const char *pszValue = NULL;
 	char mcAlt[4096] = { 0 };
 	size_t stReadInd = 0;
 	size_t stWritInd = 0;
@@ -259,20 +259,20 @@ int parse_term(struct SValue **p_ppsoVAlueList, struct SValue **p_ppsoLast, char
 	return iRetVal;
 }
 
-void operate_query(char *p_pszQuery, struct SValue **p_ppsoValueList, char **p_pszPQuery)
+void operate_query(const char *p_pszQuery, struct SValue **p_ppsoValueList, char **p_pszPQuery)
 {
 	char mcPReq[4096] = { 0 };
-	char *pszTmp;
-	char *pszTerm;
+	const char *pszTmp;
+	const char *pszTerm;
 	char *pszAlt;
 	size_t stLen;
 	size_t stWriteInd = 0;
 	struct SValue *psoLast = NULL;
 
-	pszTmp = p_pszQuery;
-
 	if (NULL == p_pszQuery)
 		return;
+
+	pszTmp = p_pszQuery;
 
 	/* обрабатываем все значения */
 	while (select_term(pszTmp, &pszTerm, &stLen)

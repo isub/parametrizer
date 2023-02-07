@@ -12,6 +12,6 @@ struct SValue {
 	OCIBind *m_hBind;
 };
 
-void operate_query(char *p_pszQuery, struct SValue **p_ppsoVAlueList, char **p_pszPQuery);
+void operate_query(const char *p_pszQuery, struct SValue **p_ppsoVAlueList, char **p_pszPQuery);
 int bind_variables(struct SValue *p_psoValueList, OCIStmt *p_psoStmt, OCIError *p_psoError);
 void parametrizer_cleanup(char **p_ppszQuery, struct SValue **p_ppsoValueList);

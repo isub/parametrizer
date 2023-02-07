@@ -45,6 +45,11 @@ DIAG_ON(unused-macros)
 
 #include "rlm_sql.h"
 
+/* isub */
+#include "parameterizer.h"
+#include "parameterizerCache.h"
+/* isub */
+
 typedef struct rlm_sql_oracle_conn_t {
 	OCIEnv		*env;
 	OCIStmt		*query;
@@ -55,6 +60,9 @@ typedef struct rlm_sql_oracle_conn_t {
 	int		id;
 	int		col_count;	//!< Number of columns associated with the result set
 	struct timeval	tv;
+/* isub */
+	struct SParameterizerCache	*psoQueryCache;
+/* isub */
 } rlm_sql_oracle_conn_t;
 
 #define	MAX_DATASTR_LEN	64
@@ -130,7 +138,10 @@ unknown:
 static int _sql_socket_destructor(rlm_sql_oracle_conn_t *conn)
 {
 	if (conn->ctx) OCILogoff(conn->ctx, conn->error);
-	if (conn->query) OCIHandleFree((dvoid *)conn->query, OCI_HTYPE_STMT);
+/* isub 	if (conn->query) OCIHandleFree((dvoid *)conn->query, OCI_HTYPE_STMT); isub */
+/* isub */
+	if( conn->psoQueryCache ) parameterizerQueryCacheFini( conn->psoQueryCache );
+/* isub */
 	if (conn->error) OCIHandleFree((dvoid *)conn->error, OCI_HTYPE_ERROR);
 	if (conn->env) OCIHandleFree((dvoid *)conn->env, OCI_HTYPE_ENV);
 
@@ -167,12 +178,23 @@ static sql_rcode_t sql_socket_init(rlm_sql_handle_t *handle, rlm_sql_config_t *c
 	/*
 	 *	Allocate handles for select and update queries
 	 */
+/* isub
 	if (OCIHandleAlloc((dvoid *)conn->env, (dvoid **)&conn->query, OCI_HTYPE_STMT, 0, NULL)) {
 		ERROR("rlm_sql_oracle: Couldn't init Oracle query handles: %s",
 		      (sql_prints_error(errbuff, sizeof(errbuff), handle, config) == 0) ? errbuff : "unknown");
 
 		return RLM_SQL_ERROR;
 	}
+   isub */
+
+/* isub */
+	if( NULL != ( conn->psoQueryCache = parameterizerQueryCacheInit() ) ) {
+	} else {
+		ERROR("rlm_sql_oracle[ parametrizer ]: Couldn't init query cache" );
+
+		return RLM_SQL_ERROR;
+	}
+/* isub */
 
 	/*
 	 *	Login to the oracle server
@@ -248,6 +270,16 @@ static sql_rcode_t sql_query(rlm_sql_handle_t *handle, rlm_sql_config_t *config,
 	int status;
 	rlm_sql_oracle_conn_t *conn = handle->conn;
 
+/* isub */
+	struct SValue *psoValueList = NULL;
+	char *pszPQuery = NULL;
+	const char *pszTmp = query;
+
+	operate_query(query, &psoValueList, &pszPQuery);
+	if(psoValueList)
+		query = pszPQuery;
+/* isub */
+
 	OraText *oracle_query;
 
 	memcpy(&oracle_query, &query, sizeof(oracle_query));
@@ -258,15 +290,31 @@ static sql_rcode_t sql_query(rlm_sql_handle_t *handle, rlm_sql_config_t *config,
 		return RLM_SQL_RECONNECT;
 	}
 
+/* isub
 	if (OCIStmtPrepare(conn->query, conn->error, oracle_query, strlen(query),
 			   OCI_NTV_SYNTAX, OCI_DEFAULT)) {
 		ERROR("rlm_sql_oracle: prepare failed in sql_query");
 
 		return RLM_SQL_ERROR;
 	}
+   isub */
+
+/* isub */
+	if( 0 == parameterizerQueryCacheGet( conn->psoQueryCache, oracle_query, conn->env, conn->error, & conn->query ) ) {
+	} else {
+		ERROR("rlm_sql_oracle[ parameterizer ]: prepared sql_query not found");
+		return RLM_SQL_ERROR;
+	}
+	status = bind_variables(psoValueList, conn->query, conn->error);
+/* isub */
 
 	status = OCIStmtExecute(conn->ctx, conn->query, conn->error, 1, 0,
 				NULL, NULL, OCI_COMMIT_ON_SUCCESS);
+
+/* isub */
+	parametrizer_cleanup(&pszPQuery, &psoValueList);
+	query = pszTmp;
+/* isub */
 
 	if (status == OCI_SUCCESS) return RLM_SQL_OK;
 	if (status == OCI_ERROR) {
@@ -296,14 +344,35 @@ static sql_rcode_t sql_select_query(rlm_sql_handle_t *handle, rlm_sql_config_t *
 
 	rlm_sql_oracle_conn_t *conn = handle->conn;
 
+/* isub */
+	struct SValue *psoValueList = NULL;
+	char *pszPQuery = NULL;
+	const char *pszTmp = query;
+
+	operate_query(query, &psoValueList, &pszPQuery);
+	if(psoValueList)
+		query = pszPQuery;
+/* isub */
+
 	memcpy(&oracle_query, &query, sizeof(oracle_query));
 
+/* isub
 	if (OCIStmtPrepare(conn->query, conn->error, oracle_query, strlen(query), OCI_NTV_SYNTAX,
 			   OCI_DEFAULT)) {
 		ERROR("rlm_sql_oracle: prepare failed in sql_select_query");
 
 		return RLM_SQL_ERROR;
 	}
+   isub */
+
+/* isub */
+	if( 0 == parameterizerQueryCacheGet( conn->psoQueryCache, oracle_query, conn->env, conn->error, & conn->query ) ) {
+	} else {
+		ERROR("rlm_sql_oracle[ parameterizer ]: prepared sql_query not found");
+		return RLM_SQL_ERROR;
+	}
+	status = bind_variables(psoValueList, conn->query, conn->error);
+/* isub */
 
 	/*
 	 *	Retrieve a single row
@@ -315,6 +384,11 @@ static sql_rcode_t sql_select_query(rlm_sql_handle_t *handle, rlm_sql_config_t *
 
 		return sql_check_error(handle, config);
 	}
+
+/* isub */
+	parametrizer_cleanup(&pszPQuery, &psoValueList);
+	query = pszTmp;
+/* isub */
 
 	/*
 	 *	We only need to do this once per result set, because
